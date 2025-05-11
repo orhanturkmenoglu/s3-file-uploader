@@ -8,20 +8,26 @@ import com.example.s3_file_uploader.repository.FileRepository;
 import com.example.s3_file_uploader.service.FileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,8 +45,14 @@ public class FileServiceImpl implements FileService {
             "image/gif"
     );
 
-    public FileServiceImpl(FileRepository fileRepository) {
+    @Value("${spring.application.bucket.name}")
+    private String bucketName;
+
+    private final S3Client s3Client;
+
+    public FileServiceImpl(FileRepository fileRepository, S3Client s3Client) {
         this.fileRepository = fileRepository;
+        this.s3Client = s3Client;
     }
 
     @Override
@@ -68,28 +80,27 @@ public class FileServiceImpl implements FileService {
         String originalFileName = file.getOriginalFilename();
         String extension = originalFileName.substring(originalFileName.lastIndexOf("."));
 
-        String filePath = UUID.randomUUID().toString() + extension;
-
-        Path uploadDir = Paths.get("files");
-
-        if (!Files.exists(uploadDir)) {
-            Files.createDirectories(uploadDir);
-        }
-
-        Path fullPath = uploadDir.resolve(filePath);
+        String fileKey = UUID.randomUUID().toString() + extension;
 
         try (InputStream inputStream = file.getInputStream()) {
-            Files.copy(inputStream, fullPath, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            log.error("FileServiceImpl::uploadFile: Failed to save file", e);
-            throw new RuntimeException("Failed to save file", e);
+            PutObjectRequest request = PutObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileKey)
+                    .contentType(file.getContentType())
+                    .build();
+
+            s3Client.putObject(request, RequestBody.fromInputStream(inputStream, file.getSize()));
+        } catch (Exception e){
+            log.error("FileServiceImpl::uploadFile: Failed to upload file to S3", e);
+            throw  new RuntimeException("Failed to upload file to S3", e);
         }
+
         FileDTO fileDTO = new FileDTO();
         fileDTO.setFileName(originalFileName);
-        fileDTO.setFileUrl(filePath);
+        fileDTO.setFileUrl(fileKey);
 
         File fileEntity = FileMapper.toEntity(fileDTO);
-        fileEntity.setFileUrl(filePath);
+        fileEntity.setFileUrl(fileKey);
         fileRepository.save(fileEntity);
 
         return FileMapper.toDTO(fileEntity);
@@ -98,19 +109,18 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public Resource downloadFile(String fileName) {
-       try {
-            Path file = Paths.get("files/" + fileName);
-            Resource resource = new UrlResource(file.toUri());
+      try {
+          GetObjectRequest request = GetObjectRequest.builder()
+                  .bucket(bucketName)
+                  .key(fileName)
+                  .build();
 
-            if (resource.exists() && resource.isReadable()) {
-                return resource;
-            } else {
-                throw new FileNotFoundException("Failed to read file");
-            }
-
-       } catch (MalformedURLException | FileNotFoundException e) {
-           throw new RuntimeException(e);
-       }
+          ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(request);
+          return new UrlResource("data:application/octet-stream;base64," + responseBytes.asByteArray());
+      } catch (MalformedURLException e) {
+          log.error("FileServiceImpl::downloadFile: Failed to download file from S3", e);
+          throw new RuntimeException(e);
+      }
     }
 
     @Override
@@ -118,15 +128,19 @@ public class FileServiceImpl implements FileService {
         File file = fileRepository.findById(id)
                 .orElseThrow(() -> new NullPointerException("File not found with id: " + id));
 
-        Path path = Paths.get(file.getFileUrl());
+       String fileKey = file.getFileUrl();
 
-        try {
-            if (Files.exists(path)) {
-                Files.delete(path); // Fiziksel dosyayı sil
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to delete file from disk", e);
-        }
+       try {
+           DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
+                   .bucket(bucketName)
+                   .key(fileKey)
+                   .build();
+
+           s3Client.deleteObject(deleteObjectRequest);
+       } catch (Exception e) {
+           log.error("FileServiceImpl::deleteFile: Failed to delete file from S3", e);
+           throw new RuntimeException("Failed to delete file from S3", e);
+       }
 
         fileRepository.deleteById(id); // Veritabanından sil
     }

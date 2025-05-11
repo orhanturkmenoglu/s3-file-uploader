@@ -42,10 +42,12 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-web</artifactId>
 		</dependency>
+		<!-- https://mvnrepository.com/artifact/software.amazon.awssdk/s3 -->
 		<dependency>
-			<groupId>com.amazonaws</groupId>
-			<artifactId>aws-java-sdk-core</artifactId>
-			<version>1.12.700</version>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.31.40</version>
+			<scope>compile</scope>
 		</dependency>
 		<dependency>
 			<groupId>com.mysql</groupId>
