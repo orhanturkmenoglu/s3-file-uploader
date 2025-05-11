@@ -55,7 +55,7 @@ public class FileController {
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "inline; filename=\"" + resource.getFilename() + "\"")
+                        "attachment; filename=\"" + resource.getFilename() + "\"")  // attachment kullanarak dosyayı indirmeye başlatıyoruz
                 .contentType(MediaType.parseMediaType(contentType))
                 .body(resource);
     }

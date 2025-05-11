@@ -9,8 +9,8 @@ import com.example.s3_file_uploader.service.FileService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
@@ -24,10 +24,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 
@@ -90,9 +86,9 @@ public class FileServiceImpl implements FileService {
                     .build();
 
             s3Client.putObject(request, RequestBody.fromInputStream(inputStream, file.getSize()));
-        } catch (Exception e){
+        } catch (Exception e) {
             log.error("FileServiceImpl::uploadFile: Failed to upload file to S3", e);
-            throw  new RuntimeException("Failed to upload file to S3", e);
+            throw new RuntimeException("Failed to upload file to S3", e);
         }
 
         FileDTO fileDTO = new FileDTO();
@@ -109,18 +105,24 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public Resource downloadFile(String fileName) {
-      try {
-          GetObjectRequest request = GetObjectRequest.builder()
-                  .bucket(bucketName)
-                  .key(fileName)
-                  .build();
+        try {
+            GetObjectRequest request = GetObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileName)
+                    .build();
 
-          ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(request);
-          return new UrlResource("data:application/octet-stream;base64," + responseBytes.asByteArray());
-      } catch (MalformedURLException e) {
-          log.error("FileServiceImpl::downloadFile: Failed to download file from S3", e);
-          throw new RuntimeException(e);
-      }
+            ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(request);
+
+            return new ByteArrayResource(responseBytes.asByteArray()) {
+                @Override
+                public String getFilename() {
+                    return fileName;
+                }
+            };
+        } catch (Exception e) {
+            log.error("FileServiceImpl::downloadFile: Failed to download file from S3", e);
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -128,19 +130,19 @@ public class FileServiceImpl implements FileService {
         File file = fileRepository.findById(id)
                 .orElseThrow(() -> new NullPointerException("File not found with id: " + id));
 
-       String fileKey = file.getFileUrl();
+        String fileKey = file.getFileUrl();
 
-       try {
-           DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
-                   .bucket(bucketName)
-                   .key(fileKey)
-                   .build();
+        try {
+            DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(fileKey)
+                    .build();
 
-           s3Client.deleteObject(deleteObjectRequest);
-       } catch (Exception e) {
-           log.error("FileServiceImpl::deleteFile: Failed to delete file from S3", e);
-           throw new RuntimeException("Failed to delete file from S3", e);
-       }
+            s3Client.deleteObject(deleteObjectRequest);
+        } catch (Exception e) {
+            log.error("FileServiceImpl::deleteFile: Failed to delete file from S3", e);
+            throw new RuntimeException("Failed to delete file from S3", e);
+        }
 
         fileRepository.deleteById(id); // Veritabanından sil
     }
