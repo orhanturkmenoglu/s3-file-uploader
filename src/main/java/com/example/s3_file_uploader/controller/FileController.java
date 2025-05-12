@@ -13,6 +13,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Paths;
 
 @RestController
 @RequestMapping("/api/v1/files")
@@ -43,23 +44,24 @@ public class FileController {
     public ResponseEntity<Resource> downloadFile(@PathVariable String fileName) throws IOException {
         Resource resource = fileService.downloadFile(fileName);
 
-        String contentType ;
+        String contentType;
+        long contentLength = resource.contentLength();  // Dosya boyutu
+
         try {
-            contentType = Files.probeContentType(resource.getFile().toPath());
+            contentType = Files.probeContentType(Paths.get(resource.getURI())); // MIME türü
             if (contentType == null) {
                 contentType = "application/octet-stream";
             }
-        }catch (IOException e) {
+        } catch (IOException e) {
             contentType = "application/octet-stream";
         }
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + resource.getFilename() + "\"")  // attachment kullanarak dosyayı indirmeye başlatıyoruz
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + resource.getFilename() + "\"")
                 .contentType(MediaType.parseMediaType(contentType))
+                .contentLength(contentLength)
                 .body(resource);
     }
-
     @GetMapping("/{id}")
     public ResponseEntity<FileDTO> getFileById(@PathVariable String id) {
         FileDTO dto = fileService.getFileById(id);

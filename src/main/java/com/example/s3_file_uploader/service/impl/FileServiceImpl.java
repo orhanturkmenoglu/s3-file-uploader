@@ -16,10 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
-import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.*;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -106,6 +103,7 @@ public class FileServiceImpl implements FileService {
     @Override
     public Resource downloadFile(String fileName) {
         try {
+            // S3'ten dosyayı al
             GetObjectRequest request = GetObjectRequest.builder()
                     .bucket(bucketName)
                     .key(fileName)
@@ -113,15 +111,32 @@ public class FileServiceImpl implements FileService {
 
             ResponseBytes<GetObjectResponse> responseBytes = s3Client.getObjectAsBytes(request);
 
-            return new ByteArrayResource(responseBytes.asByteArray()) {
+            // Dosyanın içerik türünü al
+            String contentType = "application/octet-stream";  // Default fallback content type
+            try {
+                HeadObjectRequest headRequest = HeadObjectRequest.builder()
+                        .bucket(bucketName)
+                        .key(fileName)
+                        .build();
+                HeadObjectResponse headResponse = s3Client.headObject(headRequest);
+                contentType = headResponse.contentType(); // Content type
+            } catch (Exception e) {
+                log.warn("Could not retrieve content type for file: " + fileName);
+                throw new RuntimeException("Could not retrieve content type for file: " + fileName, e);
+            }
+
+            // ByteArrayResource oluştur
+            ByteArrayResource resource = new ByteArrayResource(responseBytes.asByteArray()) {
                 @Override
                 public String getFilename() {
                     return fileName;
                 }
             };
+
+            return resource;  // Dosya başarıyla indirildi
         } catch (Exception e) {
             log.error("FileServiceImpl::downloadFile: Failed to download file from S3", e);
-            throw new RuntimeException(e);
+            throw new RuntimeException("Failed to download file from S3", e);
         }
     }
 
